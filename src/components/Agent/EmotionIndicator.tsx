@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useRef } from 'react';
+import { useFrame } from '@react-three/fiber';
+import * as THREE from 'three';
 
 const MOOD_COLORS: Record<string, string> = {
   '开心': '#4ade80',
@@ -20,14 +22,31 @@ interface EmotionIndicatorProps {
 export const EmotionIndicator: React.FC<EmotionIndicatorProps> = ({
   mood,
   position = [0, 1.3, 0],
-  size = 0.06,
+  size = 0.08,
 }) => {
+  const ref = useRef<THREE.Mesh>(null);
   const color = MOOD_COLORS[mood] || '#94a3b8';
 
+  useFrame((state) => {
+    if (ref.current) {
+      const t = state.clock.getElapsedTime();
+      ref.current.position.y = position[1] + Math.sin(t * 3) * 0.03;
+      const mat = ref.current.material as THREE.MeshStandardMaterial;
+      mat.emissiveIntensity = 0.5 + 0.3 * Math.sin(t * 2);
+    }
+  });
+
   return (
-    <mesh position={position}>
-      <sphereGeometry args={[size, 8, 8]} />
-      <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.5} />
+    <mesh ref={ref} position={position}>
+      <icosahedronGeometry args={[size, 2]} />
+      <meshStandardMaterial
+        color={color}
+        emissive={color}
+        emissiveIntensity={0.5}
+        roughness={0.2}
+        metalness={0.8}
+        toneMapped={false}
+      />
     </mesh>
   );
 };

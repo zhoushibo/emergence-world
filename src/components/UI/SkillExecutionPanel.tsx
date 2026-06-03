@@ -1,17 +1,11 @@
 import React from 'react';
 import type { SkillExecution, ModelTier, SkillExecutionStatus } from '../../services/types';
 
-// ============================================================
-// SkillExecutionPanel — Skill 扥行进度可视化面板
-// absolute 定位在 3D Canvas 之上，左上角统计面板右侧
-// ============================================================
-
 interface SkillExecutionPanelProps {
   executions: SkillExecution[];
   maxDisplay?: number;
 }
 
-// --- 状态图标映射 ---
 const STATUS_ICON: Record<SkillExecutionStatus, string> = {
   pending: '⏳',
   running: '⚡',
@@ -19,7 +13,6 @@ const STATUS_ICON: Record<SkillExecutionStatus, string> = {
   failed: '❌',
 };
 
-// --- 状态标签映射 ---
 const STATUS_LABEL: Record<SkillExecutionStatus, string> = {
   pending: '等待中',
   running: '执行中',
@@ -27,44 +20,25 @@ const STATUS_LABEL: Record<SkillExecutionStatus, string> = {
   failed: '失败',
 };
 
-// --- 模型层级颜色 ---
-const TIER_TEXT_COLOR: Record<ModelTier, string> = {
-  L0: 'text-gray-400',
-  L1: 'text-green-400',
-  L2: 'text-blue-400',
-  L3: 'text-purple-400',
+const TIER_ACCENT: Record<ModelTier, { text: string; bg: string; border: string; glow: string }> = {
+  L0: { text: 'text-gray-400', bg: 'bg-gray-500/10', border: 'border-gray-600/40', glow: 'shadow-[0_0_8px_rgba(156,163,175,0.15)]' },
+  L1: { text: 'text-green-400', bg: 'bg-green-500/10', border: 'border-green-600/40', glow: 'shadow-[0_0_8px_rgba(74,222,128,0.15)]' },
+  L2: { text: 'text-cyan-400', bg: 'bg-cyan-500/10', border: 'border-cyan-600/40', glow: 'shadow-[0_0_8px_rgba(34,211,238,0.15)]' },
+  L3: { text: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-600/40', glow: 'shadow-[0_0_8px_rgba(168,85,247,0.15)]' },
 };
 
-const TIER_BG_COLOR: Record<ModelTier, string> = {
-  L0: 'bg-gray-500/20',
-  L1: 'bg-green-500/20',
-  L2: 'bg-blue-500/20',
-  L3: 'bg-purple-500/20',
-};
-
-const TIER_BORDER_COLOR: Record<ModelTier, string> = {
-  L0: 'border-gray-600',
-  L1: 'border-green-600',
-  L2: 'border-blue-600',
-  L3: 'border-purple-600',
-};
-
-const TIER_PROGRESS_COLOR: Record<ModelTier, string> = {
+const TIER_PROGRESS: Record<ModelTier, string> = {
   L0: 'bg-gray-400',
   L1: 'bg-green-500',
-  L2: 'bg-blue-500',
+  L2: 'bg-cyan-500',
   L3: 'bg-purple-500',
 };
 
-// --- 工具函数 ---
-
-/** 截断字符串到指定长度 */
 const truncate = (str: string, maxLen: number): string => {
   if (!str) return '';
   return str.length > maxLen ? str.slice(0, maxLen) + '…' : str;
 };
 
-/** 计算执行耗时（ms → 可读格式） */
 const formatDuration = (startTime: number, endTime: number | null): string => {
   const end = endTime ?? Date.now();
   const ms = end - startTime;
@@ -73,15 +47,11 @@ const formatDuration = (startTime: number, endTime: number | null): string => {
   return `${(ms / 60_000).toFixed(1)}m`;
 };
 
-/** running 状态的模拟进度（基于已用时间，上限 90%） */
 const getRunningProgress = (startTime: number): number => {
   const elapsed = Date.now() - startTime;
-  // 30 秒内从 0 → 90%，对数曲线
   const progress = Math.min(90, (elapsed / 30_000) * 90);
   return Math.round(progress);
 };
-
-// --- 子组件：单条 Skill 执行卡片 ---
 
 interface SkillCardProps {
   execution: SkillExecution;
@@ -91,77 +61,68 @@ const SkillCard: React.FC<SkillCardProps> = ({ execution }) => {
   const { skillName, modelTier, status, input, output, startTime, endTime, error } = execution;
   const isRunning = status === 'running';
   const isFailed = status === 'failed';
+  const accent = TIER_ACCENT[modelTier];
 
   return (
-    <div
-      className={`rounded-lg border px-3 py-2.5 text-sm transition-all ${
-        isFailed
-          ? 'bg-red-900/30 border-red-700'
-          : `${TIER_BG_COLOR[modelTier]} ${TIER_BORDER_COLOR[modelTier]}`
-      }`}
-    >
-      {/* 头部：Skill 名称 + 状态图标 + 层级标签 */}
+    <div className={`rounded-lg border px-3 py-2.5 text-sm transition-all backdrop-blur-sm ${
+      isFailed
+        ? 'bg-red-900/20 border-red-500/30 shadow-[0_0_10px_rgba(239,68,68,0.15)]'
+        : `${accent.bg} ${accent.border} ${accent.glow}`
+    }`}>
       <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <span className="shrink-0">{STATUS_ICON[status]}</span>
-          <span className="truncate font-medium text-white" title={skillName}>
+          <span className="truncate font-medium text-cyan-100 font-mono text-xs" title={skillName}>
             {skillName}
           </span>
         </div>
         <div className="flex items-center gap-1.5 shrink-0 ml-2">
-          <span
-            className={`text-xs font-mono px-1.5 py-0.5 rounded ${TIER_BG_COLOR[modelTier]} ${TIER_TEXT_COLOR[modelTier]} border ${TIER_BORDER_COLOR[modelTier]}`}
-          >
+          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${accent.bg} ${accent.text} border ${accent.border}`}>
             {modelTier}
           </span>
         </div>
       </div>
 
-      {/* 进度条（仅 running 状态） */}
       {isRunning && (
         <div className="mb-2">
-          <div className="w-full bg-gray-700 rounded-full h-1.5 overflow-hidden">
+          <div className="w-full bg-cyan-900/30 rounded-full h-1 overflow-hidden">
             <div
-              className={`h-1.5 rounded-full ${TIER_PROGRESS_COLOR[modelTier]} transition-all duration-500 ease-out`}
+              className={`h-1 rounded-full ${TIER_PROGRESS[modelTier]} shadow-[0_0_6px_rgba(0,255,255,0.3)]`}
               style={{ width: `${getRunningProgress(startTime)}%` }}
             />
           </div>
         </div>
       )}
 
-      {/* 输入预览 */}
       {input && (
         <div className="mb-1">
-          <span className="text-xs text-gray-500">输入</span>
-          <p className="text-xs text-gray-300 mt-0.5 font-mono leading-relaxed">
+          <span className="text-[10px] text-cyan-500/40 uppercase tracking-wider">Input</span>
+          <p className="text-xs text-cyan-200/60 mt-0.5 font-mono leading-relaxed">
             {truncate(input, 60)}
           </p>
         </div>
       )}
 
-      {/* 输出预览（completed 状态） */}
       {status === 'completed' && output && (
         <div className="mb-1">
-          <span className="text-xs text-gray-500">输出</span>
-          <p className="text-xs text-green-300 mt-0.5 font-mono leading-relaxed">
+          <span className="text-[10px] text-green-500/40 uppercase tracking-wider">Output</span>
+          <p className="text-xs text-green-300/70 mt-0.5 font-mono leading-relaxed">
             {truncate(output, 60)}
           </p>
         </div>
       )}
 
-      {/* 错误信息（failed 状态） */}
       {isFailed && error && (
-        <div className="mb-1 bg-red-800/40 rounded px-2 py-1">
+        <div className="mb-1 bg-red-900/30 rounded px-2 py-1 border border-red-500/20">
           <p className="text-xs text-red-300 font-mono leading-relaxed">{truncate(error, 60)}</p>
         </div>
       )}
 
-      {/* 底部：状态标签 + 耗时 */}
       <div className="flex items-center justify-between mt-1.5">
-        <span className={`text-xs ${isFailed ? 'text-red-400' : 'text-gray-500'}`}>
+        <span className={`text-[10px] uppercase tracking-wider ${isFailed ? 'text-red-400' : 'text-cyan-500/40'}`}>
           {STATUS_LABEL[status]}
         </span>
-        <span className="text-xs text-gray-500 font-mono">
+        <span className="text-[10px] text-cyan-500/40 font-mono">
           {formatDuration(startTime, endTime)}
         </span>
       </div>
@@ -169,18 +130,14 @@ const SkillCard: React.FC<SkillCardProps> = ({ execution }) => {
   );
 };
 
-// --- 主组件 ---
-
 export const SkillExecutionPanel: React.FC<SkillExecutionPanelProps> = ({
   executions,
   maxDisplay = 5,
 }) => {
-  // 最多显示 maxDisplay 条，按 startTime 倒序（最新在前）
   const visibleExecutions = [...executions]
     .sort((a, b) => b.startTime - a.startTime)
     .slice(0, maxDisplay);
 
-  // 统计
   const runningCount = executions.filter((e) => e.status === 'running').length;
   const totalCount = executions.length;
 
@@ -188,31 +145,28 @@ export const SkillExecutionPanel: React.FC<SkillExecutionPanelProps> = ({
 
   return (
     <div className="absolute top-4 left-72 w-80 flex flex-col gap-2 pointer-events-auto">
-      {/* 面板标题 */}
-      <div className="bg-gray-900/90 text-white px-3 py-2 rounded-xl shadow-xl border border-gray-700">
+      <div className="bg-[#050510]/85 backdrop-blur-xl text-white px-3 py-2 rounded-lg border border-cyan-500/20 shadow-[0_0_15px_rgba(0,255,255,0.1)]">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Skill 执行</h3>
-          <div className="flex items-center gap-2 text-xs text-gray-400">
+          <h3 className="text-sm font-semibold font-mono tracking-wider text-cyan-300">SKILL EXEC</h3>
+          <div className="flex items-center gap-2 text-xs text-cyan-400/50">
             {runningCount > 0 && (
               <span className="flex items-center gap-1">
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
-                {runningCount} 运行中
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_6px_rgba(0,255,255,0.6)]" />
+                {runningCount} active
               </span>
             )}
-            <span>共 {totalCount}</span>
+            <span className="font-mono">{totalCount}</span>
           </div>
         </div>
       </div>
 
-      {/* 执行卡片列表 */}
       {visibleExecutions.map((exec) => (
         <SkillCard key={exec.id} execution={exec} />
       ))}
 
-      {/* 超出数量提示 */}
       {totalCount > maxDisplay && (
-        <div className="text-xs text-gray-500 text-center">
-          还有 {totalCount - maxDisplay} 条未显示
+        <div className="text-[10px] text-cyan-500/30 text-center font-mono uppercase tracking-wider">
+          +{totalCount - maxDisplay} more
         </div>
       )}
     </div>

@@ -31,3 +31,12 @@ reasonix.toml
 
 # Temp / build artifacts
 ts_output.txt
+
+# Large archive / asset files
+*.rar
+*.zip
+*.7z
+
+# Development/scratch files
+.move-*.png
+.smoke-*.mjs

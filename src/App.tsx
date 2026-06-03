@@ -1,31 +1,68 @@
+import * as THREE from 'three';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Environment } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
+import { EffectComposer, Bloom, Vignette, ToneMapping, SSAO } from '@react-three/postprocessing';
+import { ToneMappingMode } from 'postprocessing';
 import { Agent } from './components/Agent';
 import { WorldScene } from './components/World/WorldScene';
 import { EventVisualization } from './components/World/EventVisualization';
+import { UESkyAndAtmosphere } from './components/World/Environment';
 import { AgentDetailPanel } from './components/UI/AgentDetailPanel';
 import { StatsOverlay } from './components/UI/StatsOverlay';
 import { SkillExecutionPanel } from './components/UI/SkillExecutionPanel';
 import { useStore } from './store/useStore';
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useEffect, useCallback, useRef, useMemo } from 'react';
 import { WorldWebSocket } from './services/websocket';
 import { WorldSimulator, createWorldSimulator } from './services/worldSimulator';
 import { api } from './services/api';
 import type { AgentData } from './services/types';
+import { LOCATIONS } from './data/locations';
 
-// 初始智能体数据（10个角色，对应 Emergence World 的10位公民）
+const STAND_OFFSET: [number, number, number] = [2.2, 0, 2.2];
+
+function standPositionFor(locationId: string): [number, number, number] {
+  const loc = LOCATIONS.find((l) => l.id === locationId);
+  if (!loc) return [0, 0, 0];
+  return [
+    loc.position[0] + STAND_OFFSET[0],
+    loc.position[1] + STAND_OFFSET[1],
+    loc.position[2] + STAND_OFFSET[2],
+  ];
+}
+
 const INITIAL_AGENTS: AgentData[] = [
-  { id: 'anchor', name: 'Anchor', role: '调解者', position: [-4, 0, -5], mood: '平静', energy: 75, location: 'office_tower' },
-  { id: 'anvil', name: 'Anvil', role: '架构师', position: [4, 0, -5], mood: '思考中', energy: 80, location: 'tech_hub' },
-  { id: 'blackbox', name: 'Blackbox', role: '情报专家', position: [12, 0, -5], mood: '平静', energy: 70, location: 'coding_lab' },
-  { id: 'flora', name: 'Flora', role: '资源策略师', position: [-12, 0, 5], mood: '开心', energy: 85, location: 'writers_studio' },
-  { id: 'genome', name: 'Genome', role: '智能体科学家', position: [-12, 0, -15], mood: '思考中', energy: 65, location: 'research_institute' },
-  { id: 'horizon', name: 'Horizon', role: '探索者', position: [-12, 0, 15], mood: '兴奋', energy: 90, location: 'central_park' },
-  { id: 'kade', name: 'Kade', role: '风险研究员', position: [4, 0, 15], mood: '焦虑', energy: 55, location: 'city_hall' },
-  { id: 'lovely', name: 'Lovely', role: '社区锚点', position: [-4, 0, 5], mood: '开心', energy: 80, location: 'coffee_shop' },
-  { id: 'mira', name: 'Mira', role: '行为分析师', position: [4, 0, 5], mood: '思考中', energy: 70, location: 'restaurant_row' },
-  { id: 'spark', name: 'Spark', role: '创新领袖', position: [12, 0, 5], mood: '兴奋', energy: 95, location: 'shopping_mall' },
+  { id: 'anchor', name: 'Anchor', role: '调解者', position: standPositionFor('office_tower'), mood: '平静', energy: 75, location: 'office_tower' },
+  { id: 'anvil', name: 'Anvil', role: '架构师', position: standPositionFor('tech_hub'), mood: '思考中', energy: 80, location: 'tech_hub' },
+  { id: 'blackbox', name: 'Blackbox', role: '情报专家', position: standPositionFor('coding_lab'), mood: '平静', energy: 70, location: 'coding_lab' },
+  { id: 'flora', name: 'Flora', role: '资源策略师', position: standPositionFor('writers_studio'), mood: '开心', energy: 85, location: 'writers_studio' },
+  { id: 'genome', name: 'Genome', role: '智能体科学家', position: standPositionFor('research_institute'), mood: '思考中', energy: 65, location: 'research_institute' },
+  { id: 'horizon', name: 'Horizon', role: '探索者', position: standPositionFor('central_park'), mood: '兴奋', energy: 90, location: 'central_park' },
+  { id: 'kade', name: 'Kade', role: '风险研究员', position: standPositionFor('city_hall'), mood: '焦虑', energy: 55, location: 'city_hall' },
+  { id: 'lovely', name: 'Lovely', role: '社区锚点', position: standPositionFor('coffee_shop'), mood: '开心', energy: 80, location: 'coffee_shop' },
+  { id: 'mira', name: 'Mira', role: '行为分析师', position: standPositionFor('restaurant_row'), mood: '思考中', energy: 70, location: 'restaurant_row' },
+  { id: 'spark', name: 'Spark', role: '创新领袖', position: standPositionFor('shopping_mall'), mood: '兴奋', energy: 95, location: 'shopping_mall' },
 ];
+
+function PostProcessing() {
+  return (
+    <EffectComposer multisampling={4}>
+      <SSAO
+        radius={0.15}
+        intensity={30}
+        luminanceInfluence={0.6}
+        color={new THREE.Color('#0a0a2a')}
+      />
+      <Bloom
+        intensity={1.5}
+        luminanceThreshold={0.2}
+        luminanceSmoothing={0.9}
+        mipmapBlur
+      />
+      <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
+      <Vignette eskil={false} offset={0.1} darkness={0.8} />
+    </EffectComposer>
+  );
+}
 
 function Scene() {
   const { agents, mode, selectedAgentId, setSelectedAgent, selectedLocationId, setSelectedLocation, activeDialogues, simEvents, consumeSimEvent } = useStore();
@@ -38,7 +75,6 @@ function Scene() {
     setSelectedLocation(selectedLocationId === id ? null : id);
   }, [selectedLocationId, setSelectedLocation]);
 
-  // 构建 agentPositions 映射
   const agentPositions = useMemo(() => {
     const map: Record<string, [number, number, number]> = {};
     agents.forEach(a => { map[a.id] = a.position; });
@@ -47,17 +83,13 @@ function Scene() {
 
   return (
     <>
-      <ambientLight intensity={0.4} />
-      <directionalLight position={[10, 15, 5]} intensity={1.2} castShadow />
-      <Environment preset="city" />
+      <UESkyAndAtmosphere />
 
-      {/* 世界地标 */}
       <WorldScene
         selectedLocationId={selectedLocationId}
         onLocationSelect={handleLocationClick}
       />
 
-      {/* 智能体 */}
       {agents.map(agent => (
         <Agent
           key={agent.id}
@@ -68,22 +100,24 @@ function Scene() {
         />
       ))}
 
-      {/* 事件可视化 */}
       <EventVisualization
         events={simEvents}
         agentPositions={agentPositions}
         onEventConsumed={consumeSimEvent}
       />
 
-      {/* 相机控制 */}
       <OrbitControls
         enablePan={true}
         autoRotate={mode === 'cinematic'}
         autoRotateSpeed={0.3}
         maxPolarAngle={Math.PI / 2.2}
         minDistance={5}
-        maxDistance={50}
+        maxDistance={80}
+        enableDamping
+        dampingFactor={0.05}
       />
+
+      <PostProcessing />
     </>
   );
 }
@@ -93,8 +127,8 @@ function EventLog() {
   return (
     <div className="space-y-0.5">
       {logs.slice(0, 10).map((log, i) => (
-        <div key={i} className="text-xs text-gray-400 font-mono">
-          <span className="text-gray-600">{new Date(log.timestamp).toLocaleTimeString()}</span>
+        <div key={i} className="text-xs text-cyan-300/60 font-mono">
+          <span className="text-cyan-500/40">{new Date(log.timestamp).toLocaleTimeString()}</span>
           {' '}
           {log.message}
         </div>
@@ -112,22 +146,19 @@ export default function App() {
     skillExecutions, worldTime, setWorldTime, isSimulating,
   } = useStore();
 
-  const [ws, setWs] = useState<WorldWebSocket | null>(null);
+  const wsRef = useRef<WorldWebSocket | null>(null);
   const simulatorRef = useRef<WorldSimulator | null>(null);
 
-  // 初始化
   useEffect(() => {
     updateAgents(INITIAL_AGENTS);
     addLog('世界初始化完成');
 
-    // 尝试连接后端
     const checkBackend = async () => {
       try {
         await api.health();
         setConnected(true);
         addLog('已连接 IDA 后端');
 
-        // 启动 WebSocket
         const websocket = new WorldWebSocket(worldId);
         websocket.connect();
         websocket.onEvent((event) => {
@@ -136,7 +167,8 @@ export default function App() {
             addLog(`[WS] ${data.event_type}: ${data.content?.slice(0, 30) || ''}`);
           } catch { /* ignore */ }
         });
-        setWs(websocket);
+
+        wsRef.current = websocket;
       } catch {
         setConnected(false);
         addLog('IDA 后端未连接（使用本地模式）');
@@ -145,11 +177,10 @@ export default function App() {
     checkBackend();
 
     return () => {
-      ws?.disconnect();
+      wsRef.current?.disconnect();
     };
   }, []);
 
-  // 初始化世界模拟引擎
   useEffect(() => {
     const agentIds = INITIAL_AGENTS.map(a => a.id);
     const sim = createWorldSimulator(worldId, agentIds, { tickInterval: 3000 });
@@ -158,7 +189,6 @@ export default function App() {
       addSimEvent(event);
       addLog(`[${event.category}] ${event.agent_id}: ${event.content?.slice(0, 40) || ''}`);
 
-      // 处理事件驱动的状态变化
       switch (event.category) {
         case 'dialogue':
           if (event.agent_id) {
@@ -168,8 +198,9 @@ export default function App() {
           break;
         case 'move':
           if (event.agent_id && event.target_position) {
+            const [tx, ty, tz] = event.target_position;
             updateAgentState(event.agent_id, {
-              position: event.target_position,
+              position: [tx + STAND_OFFSET[0], ty + STAND_OFFSET[1], tz + STAND_OFFSET[2]],
               location: event.location,
             });
           }
@@ -192,7 +223,6 @@ export default function App() {
               endTime: null,
               error: null,
             });
-            // 模拟 Skill 执行完成
             setTimeout(() => {
               updateSkillExecution(event.event_id, {
                 status: 'completed',
@@ -217,7 +247,6 @@ export default function App() {
     };
   }, []);
 
-  // 世界时间每秒更新
   useEffect(() => {
     const timer = setInterval(() => {
       setWorldTime(Date.now());
@@ -225,7 +254,6 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  // 模拟引擎播放/暂停控制
   const toggleSimulation = useCallback(() => {
     const sim = simulatorRef.current;
     if (!sim) return;
@@ -243,12 +271,21 @@ export default function App() {
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
 
   return (
-    <div className="w-full h-screen bg-gray-900 relative">
-      <Canvas shadows camera={{ position: [20, 15, 20], fov: 50 }}>
+    <div className="w-full h-screen bg-[#050510] relative overflow-hidden">
+      <Canvas
+        shadows
+        camera={{ position: [25, 18, 25], fov: 45 }}
+        gl={{
+          antialias: true,
+          toneMapping: THREE.NoToneMapping,
+          toneMappingExposure: 1.0,
+          powerPreference: 'high-performance',
+        }}
+        dpr={[1, 2]}
+      >
         <Scene />
       </Canvas>
 
-      {/* 左上角统计 */}
       <StatsOverlay
         worldId={worldId}
         agentCount={agents.length}
@@ -262,17 +299,14 @@ export default function App() {
         onToggleSimulation={toggleSimulation}
       />
 
-      {/* Skill 执行面板 */}
       <SkillExecutionPanel executions={skillExecutions} />
 
-      {/* 右侧智能体详情 */}
       <AgentDetailPanel
         agent={selectedAgent || null}
         onClose={() => setSelectedAgent(null)}
       />
 
-      {/* 底部事件日志 */}
-      <div className="absolute bottom-4 left-4 right-4 h-20 overflow-y-auto bg-gray-900/80 rounded-lg border border-gray-700 p-2">
+      <div className="absolute bottom-4 left-4 right-4 h-20 overflow-y-auto bg-[#050510]/80 backdrop-blur-md rounded-lg border border-cyan-500/20 p-2 shadow-[0_0_15px_rgba(0,255,255,0.1)]">
         <EventLog />
       </div>
     </div>
