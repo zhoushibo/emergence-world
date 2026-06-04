@@ -1,6 +1,7 @@
 /* eslint-disable react-hooks/immutability */
-import React, { useRef, useState } from 'react';import { useFrame } from '@react-three/fiber';
-import { Text, Billboard } from '@react-three/drei';
+import React, { useRef, useState, useMemo, useEffect } from 'react';
+import { useFrame } from '@react-three/fiber';
+import { useGLTF, Text, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
 import type { AgentData } from '../../services/database';
 import { DialogueBubble } from './DialogueBubble';
@@ -17,6 +18,13 @@ const ROLE_COLORS: Record<string, { body: string; emissive: string; accent: stri
   '研究员':   { body: '#1a3a1a', emissive: '#44ff44', accent: '#88ff88' },
   '创新领袖': { body: '#3a1a3a', emissive: '#ff44ff', accent: '#ff88ff' },
   '社区锚点': { body: '#3a3a1a', emissive: '#ffff44', accent: '#ffff88' },
+  '医生':     { body: '#1a4a3a', emissive: '#44dd88', accent: '#66ffaa' },
+  '教师':     { body: '#2a3a4a', emissive: '#6688ff', accent: '#88aaff' },
+  '警官':     { body: '#2a2a4a', emissive: '#4444ff', accent: '#6688ff' },
+  '规划师':   { body: '#4a3a1a', emissive: '#ff8844', accent: '#ffaa66' },
+  '调度员':   { body: '#2a4a3a', emissive: '#44aa88', accent: '#66ccaa' },
+  '财务官':   { body: '#1a3a4a', emissive: '#4488dd', accent: '#66aaee' },
+  '运维工程师': { body: '#3a3a3a', emissive: '#888888', accent: '#aaaacc' },
 };
 
 const DEFAULT_ROLE_COLOR = { body: '#1a2a3c', emissive: '#4488ff', accent: '#66aaff' };
@@ -79,18 +87,88 @@ function ParticleTrail({ color, count = 20 }: { color: string; count?: number })
 
 export const Agent: React.FC<AgentProps> = ({ data, isSelected, onClick, activeDialogue }) => {
   const groupRef = useRef<THREE.Group>(null);
-  const leftLegRef = useRef<THREE.Mesh>(null);
-  const rightLegRef = useRef<THREE.Mesh>(null);
   const auraRef = useRef<THREE.Mesh>(null);
   const [hovered, setHovered] = useState(false);
 
   const roleColor = ROLE_COLORS[data.role] || DEFAULT_ROLE_COLOR;
-  const displayColor = isSelected ? '#ffcc00' : hovered ? '#ffffff' : roleColor.body;
-  const emissiveColor = isSelected ? '#ffcc00' : roleColor.emissive;
+  const displayEmissive = isSelected ? '#ffcc00' : roleColor.emissive;
+
+  // 加载角色 GLB 模型
+  const { scene } = useGLTF('/models/agent.glb');
+
+  // 克隆并覆写材质颜色
+  const modelClone = useMemo(() => {
+    const cloned = scene.clone(true);
+    const bodyColor = new THREE.Color(isSelected ? '#ffcc00' : hovered ? '#ffffff' : roleColor.body);
+    const emissiveColor = new THREE.Color(isSelected ? '#ffcc00' : roleColor.emissive);
+
+    cloned.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = true;
+        child.receiveShadow = false;
+        if (child.material) {
+          const mat = child.material as THREE.MeshStandardMaterial;
+          // 身体/头部/手臂/腿用 roleColor
+          if (mat.name === 'body_mat' || mat.name === 'arm_mat' || mat.name === 'leg_mat') {
+            mat.color.copy(bodyColor);
+            mat.emissive.copy(emissiveColor);
+            mat.emissiveIntensity = isSelected ? 0.5 : hovered ? 0.3 : 0.15;
+            mat.roughness = 0.3;
+            mat.metalness = 0.3;
+            mat.envMapIntensity = 1.5;
+          }
+          // 头部用稍亮版本
+          if (mat.name === 'head_mat') {
+            const headColor = bodyColor.clone();
+            headColor.lerp(new THREE.Color('#ffffff'), 0.15);
+            mat.color.copy(headColor);
+            mat.emissive.copy(emissiveColor);
+            mat.emissiveIntensity = isSelected ? 0.3 : 0.1;
+            mat.roughness = 0.2;
+            mat.metalness = 0.05;
+          }
+          // 腮红保持粉色
+          if (mat.name === 'blush_mat') {
+            mat.color.set('#ff9999');
+            mat.emissive.set('#ff9999');
+            mat.emissiveIntensity = 0.15;
+          }
+          // 选中时增强发光
+          if (isSelected) {
+            mat.emissiveIntensity = 0.5;
+          }
+        }
+      }
+    });
+    return cloned;
+  }, [scene, isSelected, hovered, roleColor, data.role]);
+
+  // 选中时颜色变化（依赖 isSelected/hovered 变化时重新应用）
+  useEffect(() => {
+    if (modelClone) {
+      const bodyColor = new THREE.Color(isSelected ? '#ffcc00' : hovered ? '#ffffff' : roleColor.body);
+      const emissiveColor = new THREE.Color(isSelected ? '#ffcc00' : roleColor.emissive);
+      modelClone.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.material) {
+          const mat = child.material as THREE.MeshStandardMaterial;
+          if (mat.name === 'body_mat' || mat.name === 'arm_mat' || mat.name === 'leg_mat') {
+            mat.color.copy(bodyColor);
+            mat.emissive.copy(emissiveColor);
+            mat.emissiveIntensity = isSelected ? 0.5 : hovered ? 0.3 : 0.15;
+          }
+          if (mat.name === 'head_mat') {
+            const headColor = bodyColor.clone();
+            headColor.lerp(new THREE.Color('#ffffff'), 0.15);
+            mat.color.copy(headColor);
+          }
+        }
+      });
+    }
+  }, [modelClone, isSelected, hovered, roleColor]);
 
   useFrame((state, delta) => {
-    const t = state.clock.getElapsedTime();
     if (!groupRef.current) return;
+    const t = state.clock.getElapsedTime();
 
     const target = data.position;
     const current = groupRef.current.position;
@@ -98,23 +176,25 @@ export const Agent: React.FC<AgentProps> = ({ data, isSelected, onClick, activeD
     const dz = target[2] - current.z;
     const distSq = dx * dx + dz * dz;
 
+    // 平滑移动
     const lerpRate = 1 - Math.exp(-delta * 2);
     current.x += dx * lerpRate;
     current.z += dz * lerpRate;
 
+    // 走路弹跳
     const moving = distSq > 0.04;
     const walkFreq = moving ? 7 : 2;
-    const walkAmp = moving ? 0.45 : 0.05;
-    const bobAmp = moving ? 0.08 : 0.015;
+    const bobAmp = moving ? 0.06 : 0.012;
     current.y = Math.abs(Math.sin(t * walkFreq)) * bobAmp;
 
-    if (leftLegRef.current) {
-      leftLegRef.current.rotation.x = Math.sin(t * walkFreq) * walkAmp;
-    }
-    if (rightLegRef.current) {
-      rightLegRef.current.rotation.x = Math.sin(t * walkFreq + Math.PI) * walkAmp;
+    // 身体微旋转（走路时轻微左右摇摆）
+    if (moving) {
+      groupRef.current.rotation.z = Math.sin(t * walkFreq * 0.5) * 0.03;
+    } else {
+      groupRef.current.rotation.z *= 0.95;
     }
 
+    // 光环旋转
     if (auraRef.current) {
       auraRef.current.rotation.y = t * 1.5;
       auraRef.current.rotation.z = t * 0.8;
@@ -129,41 +209,12 @@ export const Agent: React.FC<AgentProps> = ({ data, isSelected, onClick, activeD
       onPointerOver={() => setHovered(true)}
       onPointerOut={() => setHovered(false)}
     >
-      <mesh ref={leftLegRef} position={[-0.1, 0.15, 0]} castShadow>
-        <capsuleGeometry args={[0.06, 0.25, 8, 12]} />
-        <meshStandardMaterial color="#0a0a1a" roughness={0.8} metalness={0.2} />
-      </mesh>
-      <mesh ref={rightLegRef} position={[0.1, 0.15, 0]} castShadow>
-        <capsuleGeometry args={[0.06, 0.25, 8, 12]} />
-        <meshStandardMaterial color="#0a0a1a" roughness={0.8} metalness={0.2} />
-      </mesh>
+      {/* GLB 角色模型 */}
+      <primitive object={modelClone} />
 
-      <mesh position={[0, 0.55, 0]} castShadow>
-        <capsuleGeometry args={[0.15, 0.35, 8, 16]} />
-        <meshStandardMaterial
-          color={displayColor}
-          roughness={0.4}
-          metalness={0.6}
-          emissive={emissiveColor}
-          emissiveIntensity={isSelected ? 0.5 : hovered ? 0.3 : 0.15}
-          envMapIntensity={1.5}
-        />
-      </mesh>
-
-      <mesh position={[0, 1.0, 0]} castShadow>
-        <icosahedronGeometry args={[0.18, 2]} />
-        <meshStandardMaterial
-          color={displayColor}
-          roughness={0.3}
-          metalness={0.7}
-          emissive={emissiveColor}
-          emissiveIntensity={isSelected ? 0.6 : 0.2}
-          envMapIntensity={2.0}
-        />
-      </mesh>
-
-      <mesh ref={auraRef} position={[0, 0.55, 0]}>
-        <torusGeometry args={[0.35, 0.01, 8, 32]} />
+      {/* 能量光环 */}
+      <mesh ref={auraRef} position={[0, 0.45, 0]}>
+        <torusGeometry args={[0.32, 0.012, 8, 32]} />
         <meshStandardMaterial
           color={roleColor.accent}
           emissive={roleColor.accent}
@@ -175,11 +226,14 @@ export const Agent: React.FC<AgentProps> = ({ data, isSelected, onClick, activeD
         />
       </mesh>
 
+      {/* 粒子轨迹 */}
       <ParticleTrail color={roleColor.accent} />
 
+      {/* 情绪指示器 */}
       <EmotionIndicator mood={data.mood} />
 
-      <Billboard position={[0, 1.55, 0]}>
+      {/* 名称标签 */}
+      <Billboard position={[0, 1.3, 0]}>
         <Text
           fontSize={0.18}
           color={roleColor.accent}
@@ -192,7 +246,8 @@ export const Agent: React.FC<AgentProps> = ({ data, isSelected, onClick, activeD
         </Text>
       </Billboard>
 
-      <Billboard position={[0, 1.38, 0]}>
+      {/* 角色标签 */}
+      <Billboard position={[0, 1.13, 0]}>
         <Text
           fontSize={0.1}
           color={roleColor.emissive}
@@ -205,11 +260,13 @@ export const Agent: React.FC<AgentProps> = ({ data, isSelected, onClick, activeD
         </Text>
       </Billboard>
 
+      {/* 对话气泡 */}
       {activeDialogue && (
-        <DialogueBubble text={activeDialogue} position={[0, 1.8, 0]} />
+        <DialogueBubble text={activeDialogue} position={[0, 1.6, 0]} />
       )}
 
-      <group position={[0, 1.15, 0.2]}>
+      {/* 能量条 */}
+      <group position={[0, 1.0, 0.25]}>
         <mesh>
           <planeGeometry args={[0.3, 0.03]} />
           <meshBasicMaterial color="#111133" transparent opacity={0.8} />
@@ -223,6 +280,7 @@ export const Agent: React.FC<AgentProps> = ({ data, isSelected, onClick, activeD
         </mesh>
       </group>
 
+      {/* 选中时点光源 */}
       {isSelected && (
         <pointLight
           position={[0, 0.5, 0]}

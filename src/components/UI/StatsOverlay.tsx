@@ -11,6 +11,10 @@ interface StatsOverlayProps {
   worldTime: number;
   isSimulating: boolean;
   onToggleSimulation: () => void;
+  timeOfDay: 'day' | 'dusk' | 'night';
+  weather: 'clear' | 'rain';
+  onTimeChange: (time: 'day' | 'dusk' | 'night') => void;
+  onWeatherChange: (weather: 'clear' | 'rain') => void;
 }
 
 const formatWorldTime = (timestamp: number): string => {
@@ -34,6 +38,10 @@ export const StatsOverlay: React.FC<StatsOverlayProps> = ({
   worldTime,
   isSimulating,
   onToggleSimulation,
+  timeOfDay,
+  weather,
+  onTimeChange,
+  onWeatherChange,
 }) => {
   return (
     <div className="absolute top-4 left-4 min-w-60 pointer-events-auto">
@@ -125,6 +133,44 @@ export const StatsOverlay: React.FC<StatsOverlayProps> = ({
             >
               IMMERSIVE
             </button>
+          </div>
+
+          <div className="mt-3 pt-2 border-t border-cyan-500/20">
+            <div className="text-[10px] text-cyan-400/40 uppercase tracking-wider mb-1.5">Time of Day</div>
+            <div className="flex gap-1">
+              {(["day", "dusk", "night"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => onTimeChange(t)}
+                  className={"flex-1 text-[10px] py-1 rounded transition-all font-mono tracking-wider " + (
+                    timeOfDay === t
+                      ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                      : "bg-gray-800/50 text-gray-500 border border-gray-700/50 hover:bg-gray-700/50"
+                  )}
+                >
+                  {t === "day" ? "SUNNY" : t === "dusk" ? "DUSK" : "NIGHT"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-2">
+            <div className="text-[10px] text-cyan-400/40 uppercase tracking-wider mb-1.5">Weather</div>
+            <div className="flex gap-1">
+              {(["clear", "rain"] as const).map((w) => (
+                <button
+                  key={w}
+                  onClick={() => onWeatherChange(w)}
+                  className={"flex-1 text-[10px] py-1 rounded transition-all font-mono tracking-wider " + (
+                    weather === w
+                      ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                      : "bg-gray-800/50 text-gray-500 border border-gray-700/50 hover:bg-gray-700/50"
+                  )}
+                >
+                  {w === "clear" ? "CLEAR" : "RAIN"}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>

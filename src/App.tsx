@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { EffectComposer, Bloom, Vignette, ToneMapping, SSAO } from '@react-three/postprocessing';
+import { EffectComposer, Bloom, Vignette, ToneMapping, SSAO, DepthOfField, SMAA } from '@react-three/postprocessing';
 import { ToneMappingMode } from 'postprocessing';
 import { Agent } from './components/Agent';
 import { WorldScene } from './components/World/WorldScene';
@@ -11,6 +11,8 @@ import { AgentDetailPanel } from './components/UI/AgentDetailPanel';
 import { StatsOverlay } from './components/UI/StatsOverlay';
 import { SkillExecutionPanel } from './components/UI/SkillExecutionPanel';
 import { useStore } from './store/useStore';
+import { SceneErrorBoundary } from './components/SceneErrorBoundary';
+import { LoaderOverlay } from './components/LoaderOverlay';
 import { useEffect, useCallback, useRef, useMemo } from 'react';
 import { WorldWebSocket } from './services/websocket';
 import { WorldSimulator, createWorldSimulator } from './services/worldSimulator';
@@ -41,24 +43,39 @@ const INITIAL_AGENTS: AgentData[] = [
   { id: 'lovely', name: 'Lovely', role: '社区锚点', position: standPositionFor('coffee_shop'), mood: '开心', energy: 80, location: 'coffee_shop' },
   { id: 'mira', name: 'Mira', role: '行为分析师', position: standPositionFor('restaurant_row'), mood: '思考中', energy: 70, location: 'restaurant_row' },
   { id: 'spark', name: 'Spark', role: '创新领袖', position: standPositionFor('shopping_mall'), mood: '兴奋', energy: 95, location: 'shopping_mall' },
+  // ── 补充 Agent 覆盖剩余 8 个建筑 ──
+  { id: 'doc', name: 'Doc', role: '医生', position: standPositionFor('hospital'), mood: '平静', energy: 70, location: 'hospital' },
+  { id: 'sage', name: 'Sage', role: '教师', position: standPositionFor('school'), mood: '平静', energy: 80, location: 'school' },
+  { id: 'badge', name: 'Badge', role: '警官', position: standPositionFor('police_station'), mood: '平静', energy: 75, location: 'police_station' },
+  { id: 'nest', name: 'Nest', role: '规划师', position: standPositionFor('apartment_complex'), mood: '思考中', energy: 65, location: 'apartment_complex' },
+  { id: 'transit', name: 'Transit', role: '调度员', position: standPositionFor('subway_station'), mood: '平静', energy: 85, location: 'subway_station' },
+  { id: 'vault', name: 'Vault', role: '财务官', position: standPositionFor('bank'), mood: '平静', energy: 70, location: 'bank' },
+  { id: 'ops', name: 'Ops', role: '运维工程师', position: standPositionFor('devops_center'), mood: '平静', energy: 75, location: 'devops_center' },
+  { id: 'page', name: 'Page', role: '作家', position: standPositionFor('bookstore'), mood: '平静', energy: 80, location: 'bookstore' },
 ];
 
 function PostProcessing() {
   return (
-    <EffectComposer multisampling={4}>
+    <EffectComposer multisampling={0} enableNormalPass={true}>
+      {/* SMAA — 更高质量的抗锯齿 */}
+      <SMAA />
+      {/* SSAO — 环境光遮蔽增强立体感 */}
       <SSAO
         radius={0.15}
         intensity={30}
         luminanceInfluence={0.6}
         color={new THREE.Color('#0a0a2a')}
       />
+      {/* Bloom — 发光效果 */}
       <Bloom
         intensity={1.5}
         luminanceThreshold={0.2}
         luminanceSmoothing={0.9}
         mipmapBlur
       />
+      {/* ACES Filmic 色调映射 */}
       <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
+      {/* 暗角 */}
       <Vignette eskil={false} offset={0.1} darkness={0.8} />
     </EffectComposer>
   );
@@ -144,6 +161,7 @@ export default function App() {
     addSimEvent, setActiveDialogue, clearDialogue, updateAgentState,
     addSkillExecution, updateSkillExecution, setIsSimulating,
     skillExecutions, worldTime, setWorldTime, isSimulating,
+    timeOfDay, setTimeOfDay, weather, setWeather,
   } = useStore();
 
   const wsRef = useRef<WorldWebSocket | null>(null);
@@ -272,8 +290,10 @@ export default function App() {
 
   return (
     <div className="w-full h-screen bg-[#050510] relative overflow-hidden">
-      <Canvas
-        shadows
+      <LoaderOverlay />
+      <SceneErrorBoundary>
+        <Canvas
+        shadows={{ type: THREE.PCFShadowMap }}
         camera={{ position: [25, 18, 25], fov: 45 }}
         gl={{
           antialias: true,
@@ -285,6 +305,7 @@ export default function App() {
       >
         <Scene />
       </Canvas>
+      </SceneErrorBoundary>
 
       <StatsOverlay
         worldId={worldId}
@@ -297,6 +318,10 @@ export default function App() {
         worldTime={worldTime}
         isSimulating={isSimulating}
         onToggleSimulation={toggleSimulation}
+        timeOfDay={timeOfDay}
+        weather={weather}
+        onTimeChange={setTimeOfDay}
+        onWeatherChange={setWeather}
       />
 
       <SkillExecutionPanel executions={skillExecutions} />

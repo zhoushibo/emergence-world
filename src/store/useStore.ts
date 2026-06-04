@@ -4,6 +4,14 @@ import type { SimEvent } from '../services/worldSimulator';
 import { api } from '../services/api';
 import { agentDB, eventDB } from '../services/database';
 
+// ─── 容量常量 ────────────────────────────────────────────────
+const MAX_LOGS = 50;
+const MAX_SIM_EVENTS = 50;
+const MAX_SKILL_EXECUTIONS = 20;
+
+export type TimeOfDay = 'day' | 'dusk' | 'night';
+export type WeatherType = 'clear' | 'rain';
+
 interface WorldState {
   // 核心状态
   agents: AgentData[];
@@ -13,6 +21,10 @@ interface WorldState {
   selectedLocationId: string | null;
   worldId: string;
   connected: boolean;
+
+  // 环境状态
+  timeOfDay: TimeOfDay;
+  weather: WeatherType;
 
   // 世界统计
   eventCount: number;
@@ -47,6 +59,10 @@ interface WorldState {
   setIsSimulating: (running: boolean) => void;
   updateAgentState: (agentId: string, updates: Partial<AgentData>) => void;
 
+  // 环境 Actions
+  setTimeOfDay: (time: TimeOfDay) => void;
+  setWeather: (weather: WeatherType) => void;
+
   // API Actions
   fetchWorldStats: () => Promise<void>;
   emitEvent: (event: Partial<WorldEvent>) => Promise<void>;
@@ -60,6 +76,8 @@ export const useStore = create<WorldState>((set, get) => ({
   selectedLocationId: null,
   worldId: 'modern_city_01',
   connected: false,
+  timeOfDay: 'day',
+  weather: 'clear',
   eventCount: 0,
   dramaLevel: 0.5,
   activeDialogues: {},
@@ -73,6 +91,9 @@ export const useStore = create<WorldState>((set, get) => ({
   setMode: (mode) => set({ mode }),
   setSelectedAgent: (id) => set({ selectedAgentId: id }),
   setSelectedLocation: (id) => set({ selectedLocationId: id }),
+  setTimeOfDay: (timeOfDay) => set({ timeOfDay }),
+  setWeather: (weather) => set({ weather }),
+
   setConnected: (connected) => set({ connected }),
   setDramaLevel: (level) => set({ dramaLevel: level }),
   setActiveDialogue: (agentId, text) =>
@@ -89,7 +110,7 @@ export const useStore = create<WorldState>((set, get) => ({
 
   addSimEvent: (event) =>
     set((state) => ({
-      simEvents: [...state.simEvents, event].slice(-50), // 保留最近 50 条
+      simEvents: [...state.simEvents, event].slice(-MAX_SIM_EVENTS),
     })),
 
   consumeSimEvent: (eventId) =>
@@ -99,7 +120,7 @@ export const useStore = create<WorldState>((set, get) => ({
 
   addSkillExecution: (exec) =>
     set((state) => ({
-      skillExecutions: [...state.skillExecutions, exec].slice(-20), // 保留最近 20 条
+      skillExecutions: [...state.skillExecutions, exec].slice(-MAX_SKILL_EXECUTIONS),
     })),
 
   updateSkillExecution: (id, updates) =>
@@ -123,14 +144,12 @@ export const useStore = create<WorldState>((set, get) => ({
 
   updateAgents: async (agents) => {
     set({ agents });
-    for (const agent of agents) {
-      await agentDB.put(agent);
-    }
+    await Promise.all(agents.map((agent) => agentDB.put(agent)));
   },
 
   addLog: async (message) => {
     const log = { message, timestamp: Date.now() };
-    set((state) => ({ logs: [log, ...state.logs].slice(0, 50) }));
+    set((state) => ({ logs: [log, ...state.logs].slice(0, MAX_LOGS) }));
     await eventDB.add(log);
   },
 
@@ -140,8 +159,8 @@ export const useStore = create<WorldState>((set, get) => ({
       set({ eventCount: stats.total });
       const directorState = await api.getDirectorState(get().worldId);
       set({ dramaLevel: directorState.drama_level });
-    } catch {
-      // 后端未连接时静默失败
+    } catch (err) {
+      console.warn('[useStore] fetchWorldStats failed, backend may be disconnected:', err);
     }
   },
 
@@ -149,8 +168,8 @@ export const useStore = create<WorldState>((set, get) => ({
     try {
       await api.emitEvent(get().worldId, event);
       set((state) => ({ eventCount: state.eventCount + 1 }));
-    } catch {
-      // 后端未连接时静默失败
+    } catch (err) {
+      console.warn('[useStore] emitEvent failed, backend may be disconnected:', err);
     }
   },
 }));

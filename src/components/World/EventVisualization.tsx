@@ -1,18 +1,12 @@
+/**
+ * 事件可视化 — 对话弧线、移动轨迹、情绪爆发、技能光环
+ * 使用 drei 的 Line 组件替代原生 THREE.Line extend hack
+ */
 import React, { useRef, useState, useEffect, useMemo } from 'react';
-import { useFrame, extend } from '@react-three/fiber';
+import { useFrame } from '@react-three/fiber';
+import { Line } from '@react-three/drei';
 import * as THREE from 'three';
 import type { SimEvent } from '../../services/worldSimulator';
-
-declare module 'react' {
-  namespace JSX {
-    interface IntrinsicElements {
-      line_: any;
-      lineBasicMaterial_: any;
-    }
-  }
-}
-
-extend({ Line_: THREE.Line, LineBasicMaterial_: THREE.LineBasicMaterial });
 
 interface EventVisualizationProps {
   events: SimEvent[];
@@ -52,20 +46,19 @@ interface TrackedEvent {
   startTime: number;
 }
 
-function DialogueLine({
-  from,
-  to,
-  age,
-}: {
+/**
+ * 对话弧线 — 从说话者到目标的三次贝塞尔曲线
+ */
+const DialogueLine: React.FC<{
   from: [number, number, number];
   to: [number, number, number];
   age: number;
-}) {
+}> = ({ from, to, age }) => {
   const opacity = Math.max(0, 1 - age / DIALOGUE_FADE_S);
   const isHidden = opacity <= 0;
 
-  const geometry = useMemo(() => {
-    if (isHidden) return null;
+  const points = useMemo(() => {
+    if (isHidden) return [];
     const midY = Math.max(from[1], to[1]) + 1.5;
     const pts = [
       new THREE.Vector3(from[0], from[1] + 1, from[2]),
@@ -73,77 +66,65 @@ function DialogueLine({
       new THREE.Vector3(to[0], to[1] + 1, to[2]),
     ];
     const curve = new THREE.QuadraticBezierCurve3(pts[0], pts[1], pts[2]);
-    return new THREE.BufferGeometry().setFromPoints(curve.getPoints(20));
+    return curve.getPoints(20);
   }, [from[0], from[1], from[2], to[0], to[1], to[2], isHidden]);
 
-  useEffect(() => {
-    if (!geometry) return;
-    return () => geometry.dispose();
-  }, [geometry]);
-
-  if (isHidden || !geometry) return null;
+  if (isHidden || points.length === 0) return null;
 
   return (
-    <line_ geometry={geometry}>
-      <lineBasicMaterial_
-        color="#ffcc44"
-        transparent
-        opacity={opacity * 0.9}
-        linewidth={2}
-      />
-    </line_>
+    <Line
+      points={points}
+      color="#ffcc44"
+      lineWidth={1.5}
+      transparent
+      opacity={opacity * 0.9}
+    />
   );
-}
+};
 
-function MoveTrail({
-  from,
-  to,
-  age,
-}: {
+/**
+ * 移动轨迹 — 从起始到目标位置的直线
+ */
+const MoveTrail: React.FC<{
   from: [number, number, number];
   to: [number, number, number];
   age: number;
-}) {
+}> = ({ from, to, age }) => {
   const opacity = Math.max(0, 1 - age / MOVE_FADE_S);
   const isHidden = opacity <= 0;
 
-  const geometry = useMemo(() => {
-    if (isHidden) return null;
-    const pts = [
+  const points = useMemo(() => {
+    if (isHidden) return [];
+    return [
       new THREE.Vector3(from[0], 0.1, from[2]),
       new THREE.Vector3(to[0], 0.1, to[2]),
     ];
-    return new THREE.BufferGeometry().setFromPoints(pts);
   }, [from[0], from[2], to[0], to[2], isHidden]);
 
-  useEffect(() => {
-    if (!geometry) return;
-    return () => geometry.dispose();
-  }, [geometry]);
-
-  if (isHidden || !geometry) return null;
+  if (isHidden || points.length === 0) return null;
 
   return (
-    <line_ geometry={geometry}>
-      <lineBasicMaterial_
-        color="#44aaff"
-        transparent
-        opacity={opacity * 0.7}
-        linewidth={1}
-      />
-    </line_>
+    <Line
+      points={points}
+      color="#44aaff"
+      lineWidth={1}
+      transparent
+      opacity={opacity * 0.7}
+      dashed
+      dashSize={0.2}
+      gapSize={0.15}
+    />
   );
-}
+};
 
-function EmotionBurst({
-  position,
-  color,
-  age,
-}: {
+/**
+ * 情绪爆发 — 旋转的发光几何体
+ */
+const EmotionBurst: React.FC<{
   position: [number, number, number];
   color: string;
   age: number;
-}) {
+}> = ({ position, color, age }) => {
   const ref = useRef<THREE.Group>(null);
   const opacity = Math.max(0, 1 - age / EMOTION_FADE_S);
   const yOffset = age * 0.8;
@@ -185,15 +166,15 @@ function EmotionBurst({
       </mesh>
     </group>
   );
-}
+};
 
-function SkillAura({
-  position,
-  age,
-}: {
+/**
+ * 技能光环 — 旋转的双环发光效果
+ */
+const SkillAura: React.FC<{
   position: [number, number, number];
   age: number;
-}) {
+}> = ({ position, age }) => {
   const ref = useRef<THREE.Group>(null);
   const opacity = Math.max(0, 1 - age / SKILL_FADE_S);
 
@@ -241,7 +222,7 @@ function SkillAura({
       />
     </group>
   );
-}
+};
 
 export const EventVisualization: React.FC<EventVisualizationProps> = ({
   events,
@@ -364,6 +345,11 @@ export const EventVisualization: React.FC<EventVisualizationProps> = ({
                 age={age}
               />
             );
+          }
+
+          case 'relationship': {
+            // 关系事件暂无视觉反馈
+            return null;
           }
 
           default:

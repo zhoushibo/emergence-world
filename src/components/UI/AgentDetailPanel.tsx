@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { AgentData } from '../../services/types';
 import { api } from '../../services/api';
+import { useStore } from '../../store/useStore';
 import { NovelCreationUI } from './NovelCreationUI';
 import { CodeDevUI } from './CodeDevUI';
 
@@ -66,9 +67,11 @@ export const AgentDetailPanel: React.FC<AgentDetailPanelProps> = ({
 
   const memories = apiMemories.length > 0 ? apiMemories : propMemories;
   const relationships = propRelationships;
+  const connected = useStore((s) => s.connected);
 
   useEffect(() => {
     if (!agent?.id) return;
+    if (!connected) return;
 
     let cancelled = false;
 

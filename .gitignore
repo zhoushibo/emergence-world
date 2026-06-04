@@ -40,3 +40,9 @@ ts_output.txt
 # Development/scratch files
 .move-*.png
 .smoke-*.mjs
+
+# Test coverage
+coverage/
+
+# AI settings
+.claude/

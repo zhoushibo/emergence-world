@@ -148,28 +148,10 @@ const TOOL_MAPPING: Partial<Record<AgentRole, string[]>> = {
   catalyst:       ['process_acceleration', 'blocker_resolution'],
 };
 
-// ─── 18 个地点坐标（与 locations.ts 完全对应） ────────────────
+// ─── 地点坐标（从 locations.ts 派生，单源 truth） ─────────────
 
-const LOCATION_POSITIONS: Record<string, [number, number, number]> = {
-  research_institute: [-12, 0, -15],
-  hospital:           [-4, 0, -15],
-  school:             [4, 0, -15],
-  police_station:     [12, 0, -15],
-  apartment_complex:  [-12, 0, -5],
-  office_tower:       [-4, 0, -5],
-  tech_hub:           [4, 0, -5],
-  coding_lab:         [12, 0, -5],
-  writers_studio:     [-12, 0, 5],
-  coffee_shop:        [-4, 0, 5],
-  restaurant_row:     [4, 0, 5],
-  shopping_mall:      [12, 0, 5],
-  central_park:       [-12, 0, 15],
-  subway_station:     [-4, 0, 15],
-  city_hall:          [4, 0, 15],
-  bank:               [12, 0, 15],
-  devops_center:      [-4, 0, 22],
-  bookstore:          [4, 0, 22],
-};
+const LOCATION_POSITIONS: Record<string, [number, number, number]> =
+  Object.fromEntries(LOCATIONS.map((l) => [l.id, l.position]));
 
 const LOCATION_IDS = Object.keys(LOCATION_POSITIONS);
 

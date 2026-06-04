@@ -1,6 +1,15 @@
+/**
+ * 城市地面 — 科幻网格 + 道路 + 车道标线
+ */
 import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
+
+// 道路位置（与 locations.ts 建筑布局对齐）
+const ROAD_Z = [-17.5, -7.5, 2.5, 12.5, 19.5];  // 横向道路
+const ROAD_X = [-14, -6, 2, 10];                  // 纵向道路
+const BUILDING_X = [-12, -4, 4, 12];
+const BUILDING_Z = [-15, -5, 5, 15, 22];
 
 export const UECityGround: React.FC = () => {
   const gridMaterialRef = useRef<THREE.ShaderMaterial>(null);
@@ -63,6 +72,7 @@ export const UECityGround: React.FC = () => {
 
   return (
     <group>
+      {/* 基础网格地面 */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
         <planeGeometry args={[200, 200, 1, 1]} />
         <shaderMaterial
@@ -72,44 +82,92 @@ export const UECityGround: React.FC = () => {
         />
       </mesh>
 
-      {[-15, -5, 5, 15, 22].map((z, i) => (
-        <mesh
-          key={`road-ew-${i}`}
-          rotation={[-Math.PI / 2, 0, 0]}
-          position={[0, 0.02, z + 2.5]}
-        >
-          <planeGeometry args={[60, 3]} />
-          <meshStandardMaterial
-            color="#0d0d2b"
-            roughness={0.7}
-            metalness={0.3}
-            emissive="#0a0a2a"
-            emissiveIntensity={0.1}
-          />
-        </mesh>
+      {/* ── 横向道路（z 方向） ── */}
+      {ROAD_Z.map((z, i) => (
+        <React.Fragment key={`road-ew-${i}`}>
+          {/* 路面 */}
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, z]}>
+            <planeGeometry args={[60, 3]} />
+            <meshStandardMaterial
+              color="#0d0d2b"
+              roughness={0.7}
+              metalness={0.3}
+              emissive="#0a0a2a"
+              emissiveIntensity={0.1}
+            />
+          </mesh>
+          {/* 车道线（中间虚线） */}
+          {Array.from({ length: 6 }).map((_, j) => (
+            <mesh
+              key={`line-ew-${i}-${j}`}
+              rotation={[-Math.PI / 2, 0, 0]}
+              position={[-15 + j * 6, 0.03, z]}
+            >
+              <planeGeometry args={[2.5, 0.06]} />
+              <meshBasicMaterial
+                color="#334466"
+                transparent
+                opacity={0.5}
+              />
+            </mesh>
+          ))}
+        </React.Fragment>
       ))}
 
-      {[-12, -4, 4, 12].map((x, i) => (
-        <mesh
-          key={`road-ns-${i}`}
-          rotation={[-Math.PI / 2, 0, 0]}
-          position={[x, 0.02, 3.5]}
-        >
-          <planeGeometry args={[3, 60]} />
-          <meshStandardMaterial
-            color="#0d0d2b"
-            roughness={0.7}
-            metalness={0.3}
-            emissive="#0a0a2a"
-            emissiveIntensity={0.1}
-          />
-        </mesh>
+      {/* ── 纵向道路（x 方向） ── */}
+      {ROAD_X.map((x, i) => (
+        <React.Fragment key={`road-ns-${i}`}>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[x, 0.02, 3.5]}>
+            <planeGeometry args={[3, 60]} />
+            <meshStandardMaterial
+              color="#0d0d2b"
+              roughness={0.7}
+              metalness={0.3}
+              emissive="#0a0a2a"
+              emissiveIntensity={0.1}
+            />
+          </mesh>
+          {/* 车道线 */}
+          {Array.from({ length: 6 }).map((_, j) => (
+            <mesh
+              key={`line-ns-${i}-${j}`}
+              rotation={[-Math.PI / 2, 0, 0]}
+              position={[x, 0.03, -12 + j * 6]}
+            >
+              <planeGeometry args={[0.06, 2.5]} />
+              <meshBasicMaterial
+                color="#334466"
+                transparent
+                opacity={0.5}
+              />
+            </mesh>
+          ))}
+        </React.Fragment>
       ))}
 
-      <pointLight position={[-12, 0.5, -15]} intensity={0.3} color="#4466ff" distance={8} decay={2} />
-      <pointLight position={[4, 0.5, -5]} intensity={0.3} color="#ff4488" distance={8} decay={2} />
-      <pointLight position={[-4, 0.5, 5]} intensity={0.3} color="#44ffaa" distance={8} decay={2} />
-      <pointLight position={[12, 0.5, 15]} intensity={0.3} color="#ffaa44" distance={8} decay={2} />
+      {/* ── 交叉口斑马线 ── */}
+      {ROAD_X.map((x) =>
+        ROAD_Z.map((z, i) => (
+          <mesh
+            key={`crosswalk-${x}-${z}`}
+            rotation={[-Math.PI / 2, 0, 0]}
+            position={[x, 0.035, z]}
+          >
+            <planeGeometry args={[1.8, 0.15]} />
+            <meshBasicMaterial
+              color="#445577"
+              transparent
+              opacity={0.3}
+            />
+          </mesh>
+        ))
+      )}
+
+      {/* ── 装饰性点光源（路口） ── */}
+      <pointLight position={[-14, 0.5, -17.5]} intensity={0.3} color="#4466ff" distance={8} decay={2} />
+      <pointLight position={[10, 0.5, -7.5]} intensity={0.3} color="#ff4488" distance={8} decay={2} />
+      <pointLight position={[-6, 0.5, 12.5]} intensity={0.3} color="#44ffaa" distance={8} decay={2} />
+      <pointLight position={[2, 0.5, 19.5]} intensity={0.3} color="#ffaa44" distance={8} decay={2} />
     </group>
   );
 };
