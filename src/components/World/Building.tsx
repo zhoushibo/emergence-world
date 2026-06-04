@@ -4,6 +4,7 @@ import { useFrame } from '@react-three/fiber';
 import { Text } from '@react-three/drei';
 import * as THREE from 'three';
 import type { LocationConfig } from '../../data/locations';
+import { createBuildingMaterial } from './BuildingShader';
 
 interface BuildingProps {
   data: LocationConfig;
@@ -43,26 +44,51 @@ export const Building: React.FC<BuildingProps> = ({ data, isSelected, onClick })
   // 加载 GLB 模型（drei 的 useGLTF 自带缓存，相同路径不会重复加载）
   const { scene } = useGLTF(`${MODEL_BASE}${data.id}.glb`);
 
-  // 克隆场景，确保每个建筑实例独立
+  // 克隆并应用 Fresnel 边缘光 Shader
   const modelClone = useMemo(() => {
     const cloned = scene.clone(true);
+    const { color: baseColor, roofColor: neonColor } = data;
     cloned.traverse((child) => {
       if (child instanceof THREE.Mesh) {
         child.castShadow = true;
         child.receiveShadow = true;
+        if (child.material) {
+          const mat = child.material as THREE.MeshStandardMaterial;
+          // 保留纹理建筑（Blender 生成的有真实纹理图）
+          const hasTexture = !!(mat.map);
+          // 保留自带发光的材质（窗户/霓虹/玻璃）
+          const hasEmission = (mat.emissive && (mat.emissive.getHex?.() ?? 0) > 0) || (mat.emissiveIntensity ?? 0) > 0.1;
+          const matName = (mat.name || '').toLowerCase();
+          const isEmissive = matName.includes('window') || matName.includes('emissive') || matName.includes('glass') || matName.includes('emit') || hasEmission;
+          // 只有无纹理、无发光的纯色建筑才套 Fresnel Shader
+          if (!hasTexture && !isEmissive) {
+            child.material = createBuildingMaterial(baseColor, neonColor, 0.35, 0.4, 0.2);
+            (child.material as THREE.ShaderMaterial).uniforms.uTime.value = Math.random() * 100;
+          }
+        }
       }
     });
     return cloned;
-  }, [scene]);
+  }, [scene, data.color, data.roofColor]);
 
   // 动态材质覆写 — 选中/悬停时调整外观
   const effectColor = isSelected ? '#ffcc00' : hovered ? '#ffffff' : null;
   const roleNeonColor = NEON_BY_TYPE[data.type] || '#88aaff';
 
   useFrame((state) => {
-    if (!groupRef.current || !effectColor) return;
-    // 微弱的脉冲发光效果，选中时
+    if (!groupRef.current) return;
     const t = state.clock.getElapsedTime();
+
+    // 更新所有 ShaderMaterial 的时间 uniform（Fresnel 脉冲）
+    groupRef.current.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.material instanceof THREE.ShaderMaterial) {
+        child.material.uniforms.uTime.value = t;
+        child.material.uniforms.uCameraPos.value.copy(state.camera.position);
+      }
+    });
+
+    if (!effectColor) return;
+    // 选中/悬停脉冲发光
     const pulse = 0.3 + 0.15 * Math.sin(t * 2 + data.position[0]);
     groupRef.current.children.forEach((child) => {
       if (child instanceof THREE.Mesh && child.material) {

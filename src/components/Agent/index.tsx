@@ -89,6 +89,7 @@ export const Agent: React.FC<AgentProps> = ({ data, isSelected, onClick, activeD
   const groupRef = useRef<THREE.Group>(null);
   const auraRef = useRef<THREE.Mesh>(null);
   const [hovered, setHovered] = useState(false);
+  const initRef = useRef(false);
 
   const roleColor = ROLE_COLORS[data.role] || DEFAULT_ROLE_COLOR;
   const displayEmissive = isSelected ? '#ffcc00' : roleColor.emissive;
@@ -166,28 +167,57 @@ export const Agent: React.FC<AgentProps> = ({ data, isSelected, onClick, activeD
     }
   }, [modelClone, isSelected, hovered, roleColor]);
 
+  // 移动状态（避免 target 被 store 覆盖时瞬移）
+  const targetRef = useRef(new THREE.Vector3());
+  const startRef = useRef(new THREE.Vector3());
+  const movingRef = useRef(false);
+
+  // 只在首次加载时初始化位置
+  useEffect(() => {
+    if (groupRef.current && !initRef.current) {
+      groupRef.current.position.set(data.position[0], data.position[1], data.position[2]);
+      targetRef.current.copy(groupRef.current.position);
+      initRef.current = true;
+    }
+  }, [data.id]);
+
+  // 监听 store position 变化 → 更新移动目标
+  useEffect(() => {
+    const newTarget = new THREE.Vector3(data.position[0], data.position[1], data.position[2]);
+    if (targetRef.current.distanceToSquared(newTarget) > 0.01) {
+      startRef.current.copy(groupRef.current?.position || targetRef.current);
+      targetRef.current.copy(newTarget);
+      movingRef.current = true;
+    }
+  }, [data.position[0], data.position[1], data.position[2]]);
+
   useFrame((state, delta) => {
     if (!groupRef.current) return;
     const t = state.clock.getElapsedTime();
-
-    const target = data.position;
     const current = groupRef.current.position;
-    const dx = target[0] - current.x;
-    const dz = target[2] - current.z;
-    const distSq = dx * dx + dz * dz;
+    const target = targetRef.current;
 
-    // 平滑移动
-    const lerpRate = 1 - Math.exp(-delta * 2);
-    current.x += dx * lerpRate;
-    current.z += dz * lerpRate;
+    const dx = target.x - current.x;
+    const dz = target.z - current.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+
+    const SPEED = 3.5; // units per second
+    if (dist > 0.03) {
+      const step = Math.min(SPEED * delta, dist);
+      current.x += (dx / dist) * step;
+      current.z += (dz / dist) * step;
+    } else if (dist > 0) {
+      current.x = target.x;
+      current.z = target.z;
+    }
 
     // 走路弹跳
-    const moving = distSq > 0.04;
+    const moving = dist > 0.05;
     const walkFreq = moving ? 7 : 2;
     const bobAmp = moving ? 0.06 : 0.012;
     current.y = Math.abs(Math.sin(t * walkFreq)) * bobAmp;
 
-    // 身体微旋转（走路时轻微左右摇摆）
+    // 身体微旋转
     if (moving) {
       groupRef.current.rotation.z = Math.sin(t * walkFreq * 0.5) * 0.03;
     } else {
@@ -204,7 +234,6 @@ export const Agent: React.FC<AgentProps> = ({ data, isSelected, onClick, activeD
   return (
     <group
       ref={groupRef}
-      position={data.position}
       onClick={() => onClick?.(data.id)}
       onPointerOver={() => setHovered(true)}
       onPointerOut={() => setHovered(false)}

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette, ToneMapping, SSAO, DepthOfField, SMAA } from '@react-three/postprocessing';
 import { ToneMappingMode } from 'postprocessing';
@@ -13,9 +13,10 @@ import { SkillExecutionPanel } from './components/UI/SkillExecutionPanel';
 import { useStore } from './store/useStore';
 import { SceneErrorBoundary } from './components/SceneErrorBoundary';
 import { LoaderOverlay } from './components/LoaderOverlay';
-import { useEffect, useCallback, useRef, useMemo } from 'react';
+import { useEffect, useCallback, useRef, useMemo, useState } from 'react';
 import { WorldWebSocket } from './services/websocket';
-import { WorldSimulator, createWorldSimulator } from './services/worldSimulator';
+import { createCognitiveWorldSimulator } from './services/cognitiveWorldSimulator';
+import type { AgentRuntimeSnapshot } from './services/cognitiveWorldSimulator';
 import { api } from './services/api';
 import type { AgentData } from './services/types';
 import { LOCATIONS } from './data/locations';
@@ -81,8 +82,16 @@ function PostProcessing() {
   );
 }
 
-function Scene() {
+function Scene({ mapMode }: { mapMode: 'fantasy' | 'real' }) {
   const { agents, mode, selectedAgentId, setSelectedAgent, selectedLocationId, setSelectedLocation, activeDialogues, simEvents, consumeSimEvent } = useStore();
+  const refs = useRef({ cameraMove: false });
+
+  // On mapMode change, adjust camera
+  useEffect(() => {
+    if (mapMode === 'real') {
+      refs.current.cameraMove = true;
+    }
+  }, [mapMode]);
 
   const handleAgentClick = useCallback((id: string) => {
     setSelectedAgent(selectedAgentId === id ? null : id);
@@ -105,6 +114,7 @@ function Scene() {
       <WorldScene
         selectedLocationId={selectedLocationId}
         onLocationSelect={handleLocationClick}
+        mapMode={mapMode}
       />
 
       {agents.map(agent => (
@@ -123,13 +133,16 @@ function Scene() {
         onEventConsumed={consumeSimEvent}
       />
 
+      {mapMode === 'real' && <HangzhouCamera />}
+
       <OrbitControls
         enablePan={true}
-        autoRotate={mode === 'cinematic'}
+        autoRotate={false}
         autoRotateSpeed={0.3}
-        maxPolarAngle={Math.PI / 2.2}
-        minDistance={5}
-        maxDistance={80}
+        maxPolarAngle={mapMode === 'real' ? Math.PI / 3 : Math.PI / 2.2}
+        minDistance={mapMode === 'real' ? 50 : 5}
+        maxDistance={mapMode === 'real' ? 800 : 80}
+        target={mapMode === 'real' ? [0, 0, 0] : [0, 4, 0]}
         enableDamping
         dampingFactor={0.05}
       />
@@ -165,7 +178,9 @@ export default function App() {
   } = useStore();
 
   const wsRef = useRef<WorldWebSocket | null>(null);
-  const simulatorRef = useRef<WorldSimulator | null>(null);
+  const simulatorRef = useRef<ReturnType<typeof createCognitiveWorldSimulator> | null>(null);
+
+  const [mapMode, setMapMode] = useState<'fantasy' | 'real'>('fantasy');
 
   useEffect(() => {
     updateAgents(INITIAL_AGENTS);
@@ -201,7 +216,7 @@ export default function App() {
 
   useEffect(() => {
     const agentIds = INITIAL_AGENTS.map(a => a.id);
-    const sim = createWorldSimulator(worldId, agentIds, { tickInterval: 3000 });
+    const sim = createCognitiveWorldSimulator(worldId, agentIds, { tickInterval: 3500 });
 
     sim.onEvent((event) => {
       addSimEvent(event);
@@ -253,10 +268,33 @@ export default function App() {
       }
     });
 
+    // CognitiveSimulator 同步状态（不覆盖位置，让 Agent lerp 平滑移动）
+    sim.onStateUpdate((states: AgentRuntimeSnapshot[]) => {
+      for (const s of states) {
+        updateAgentState(s.id, {
+          mood: s.emotion,
+          energy: s.energy,
+          location: s.location,
+        });
+      }
+    });
+
     sim.start();
     simulatorRef.current = sim;
     setIsSimulating(true);
-    addLog('世界模拟引擎已启动（3s tick）');
+
+    // 初始同步：确保 Agent 位置与引擎一致
+    const initialStates = sim.getAgentRuntimeStates();
+    for (const s of initialStates) {
+      updateAgentState(s.id, {
+        position: s.position as [number, number, number],
+        mood: s.emotion,
+        energy: s.energy,
+        location: s.location,
+      });
+    }
+
+    addLog('认知引擎已启动（深度人格 + 叙事弧线 + LLM）');
 
     return () => {
       sim.stop();
@@ -303,7 +341,7 @@ export default function App() {
         }}
         dpr={[1, 2]}
       >
-        <Scene />
+        <Scene mapMode={mapMode} />
       </Canvas>
       </SceneErrorBoundary>
 
@@ -331,9 +369,27 @@ export default function App() {
         onClose={() => setSelectedAgent(null)}
       />
 
+      {/* Map mode toggle */}
+      <button
+        onClick={() => setMapMode(m => m === 'fantasy' ? 'real' : 'fantasy')}
+        className="absolute top-4 right-4 px-4 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-xs border border-cyan-500/30 rounded-lg transition-all font-mono tracking-wider backdrop-blur-sm"
+      >
+        {mapMode === 'real' ? '🗺️ 杭州' : '🏙️ 幻想'}
+      </button>
+
       <div className="absolute bottom-4 left-4 right-4 h-20 overflow-y-auto bg-[#050510]/80 backdrop-blur-md rounded-lg border border-cyan-500/20 p-2 shadow-[0_0_15px_rgba(0,255,255,0.1)]">
         <EventLog />
       </div>
     </div>
   );
+}
+
+/** Snap camera to bird's-eye for Hangzhou */
+function HangzhouCamera() {
+  const { camera } = useThree();
+  useEffect(() => {
+    camera.position.set(0, 120, 0);
+    camera.lookAt(0, 0, 0);
+  }, [camera]);
+  return null;
 }
